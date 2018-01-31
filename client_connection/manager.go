@@ -22,7 +22,7 @@ type connectionManager struct {
 	//these are passed on creation
 	mysteriumClient          server.Client
 	dialogEstablisherFactory DialogEstablisherFactory
-	vpnClientFactory         VpnClientFactory
+	newVpnClient             VpnClientFactory
 	statsKeeper              bytescount.SessionStatsKeeper
 	//these are populated by Connect at runtime
 	dialog    communication.Dialog
@@ -35,7 +35,7 @@ func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEs
 	return &connectionManager{
 		mysteriumClient:          mysteriumClient,
 		dialogEstablisherFactory: dialogEstablisherFactory,
-		vpnClientFactory:         vpnClientFactory,
+		newVpnClient:             vpnClientFactory,
 		statsKeeper:              statsKeeper,
 		dialog:                   nil,
 		vpnClient:                nil,
@@ -73,7 +73,7 @@ func (manager *connectionManager) Connect(myID identity.Identity, nodeKey string
 		return err
 	}
 
-	manager.vpnClient, err = manager.vpnClientFactory(*vpnSession, myID)
+	manager.vpnClient, err = manager.newVpnClient(*vpnSession, myID)
 
 	if err := manager.vpnClient.Start(); err != nil {
 		manager.status = statusError(err)
