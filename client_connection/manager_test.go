@@ -65,7 +65,7 @@ func (tc *testContext) TestWhenNoConnectionIsMadeStatusIsNotConnected() {
 func (tc *testContext) TestWithUnknownNodeKeyConnectionIsNotMade() {
 	noProposalsError := errors.New("node has no service proposals")
 
-	assert.Error(tc.T(), tc.connManager.Connect(identity.FromAddress("identity-1"), "unknown-node"))
+	assert.Error(tc.T(), tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress("unknown-node")))
 	assert.Equal(tc.T(), ConnectionStatus{NotConnected, "", noProposalsError}, tc.connManager.Status())
 
 	assert.False(tc.T(), tc.fakeStatsKeeper.sessionStartMarked)
@@ -75,21 +75,21 @@ func (tc *testContext) TestOnConnectErrorStatusIsNotConnectedAndLastErrorIsSetAn
 	fatalVpnError := errors.New("fatal connection error")
 	tc.fakeOpenVpn.onConnectReturnError = fatalVpnError
 
-	assert.Error(tc.T(), tc.connManager.Connect(identity.FromAddress("identity-1"), activeProviderID))
+	assert.Error(tc.T(), tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress(activeProviderID)))
 	assert.Equal(tc.T(), ConnectionStatus{NotConnected, "", fatalVpnError}, tc.connManager.Status())
 
 	assert.False(tc.T(), tc.fakeStatsKeeper.sessionStartMarked)
 }
 
 func (tc *testContext) TestWhenManagerMadeConnectionStatusReturnsConnectedStateAndSessionId() {
-	err := tc.connManager.Connect(identity.FromAddress("identity-1"), activeProviderID)
+	err := tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress(activeProviderID))
 	tc.fakeOpenVpn.reportState(openvpn.STATE_CONNECTED)
 	assert.NoError(tc.T(), err)
 	assert.Equal(tc.T(), ConnectionStatus{Connected, "vpn-session-id", nil}, tc.connManager.Status())
 }
 
 func (tc *testContext) TestWhenManagerMadeConnectionSessionStartIsMarked() {
-	err := tc.connManager.Connect(identity.FromAddress("identity-1"), "vpn-node-1")
+	err := tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress("vpn-node-1"))
 	tc.fakeOpenVpn.reportState(openvpn.STATE_CONNECTED)
 	assert.NoError(tc.T(), err)
 
@@ -99,14 +99,14 @@ func (tc *testContext) TestWhenManagerMadeConnectionSessionStartIsMarked() {
 func (tc *testContext) TestStatusReportsConnectingWhenConnectionIsInProgress() {
 	tc.fakeOpenVpn.delayableAction()
 	go func() {
-		tc.connManager.Connect(identity.FromAddress("identity-1"), activeProviderID)
+		tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress(activeProviderID))
 	}()
 	tc.fakeOpenVpn.waitForDelayState()
 	assert.Equal(tc.T(), ConnectionStatus{Connecting, "", nil}, tc.connManager.Status())
 }
 
 func (tc *testContext) TestStatusReportsDisconnectingThenNotConnected() {
-	err := tc.connManager.Connect(identity.FromAddress("identity-1"), activeProviderID)
+	err := tc.connManager.Connect(identity.FromAddress("identity-1"), identity.FromAddress(activeProviderID))
 	tc.fakeOpenVpn.reportState(openvpn.STATE_CONNECTED)
 
 	assert.NoError(tc.T(), err)

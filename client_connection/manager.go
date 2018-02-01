@@ -36,12 +36,10 @@ func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEs
 	}
 }
 
-func (manager *connectionManager) Connect(myID identity.Identity, nodeKey string) error {
+func (manager *connectionManager) Connect(myID, providerID identity.Identity) error {
 	manager.status = statusConnecting()
 
-	providerID := identity.FromAddress(nodeKey)
-
-	proposals, err := manager.mysteriumClient.FindProposals(nodeKey)
+	proposals, err := manager.mysteriumClient.FindProposals(providerID.Address)
 	if err != nil {
 		manager.status = statusError(err)
 		return err

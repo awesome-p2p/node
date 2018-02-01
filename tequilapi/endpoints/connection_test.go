@@ -22,12 +22,12 @@ type fakeManager struct {
 	onStatusReturn     client_connection.ConnectionStatus
 	disconnectCount    int
 	requestedIdentity  identity.Identity
-	requestedNode      string
+	requestedNode      identity.Identity
 }
 
-func (fm *fakeManager) Connect(identity identity.Identity, node string) error {
-	fm.requestedIdentity = identity
-	fm.requestedNode = node
+func (fm *fakeManager) Connect(myID, nodeID identity.Identity) error {
+	fm.requestedIdentity = myID
+	fm.requestedNode = nodeID
 	return fm.onConnectReturn
 }
 
@@ -256,7 +256,7 @@ func TestPutWithValidBodyCreatesConnection(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, resp.Code)
 
 	assert.Equal(t, identity.FromAddress("my-identity"), fakeManager.requestedIdentity)
-	assert.Equal(t, "required-node", fakeManager.requestedNode)
+	assert.Equal(t, identity.FromAddress("required-node"), fakeManager.requestedNode)
 
 }
 

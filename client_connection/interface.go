@@ -13,7 +13,7 @@ type DialogEstablisherCreator func(identity identity.Identity) communication.Dia
 type VpnClientCreator func(session.SessionDto, identity.Identity, state.ClientStateCallback) (openvpn.Client, error)
 
 type Manager interface {
-	Connect(identity identity.Identity, NodeKey string) error
+	Connect(myID, nodeID identity.Identity) error
 	Status() ConnectionStatus
 	Disconnect() error
 }
