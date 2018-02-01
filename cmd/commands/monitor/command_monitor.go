@@ -35,7 +35,7 @@ func (cmd *Command) Run(options CommandOptions) error {
 	}
 	defer nodeProvider.Close()
 
-	cmd.ipOriginal, err = cmd.ipResolver.GetOutboundIP()
+	cmd.ipOriginal, err = cmd.ipResolver.GetPublicIP()
 	if err != nil {
 		return errors.New("Failed to get original IP: " + err.Error())
 	}
@@ -68,7 +68,7 @@ func (cmd *Command) Run(options CommandOptions) error {
 //   state.NewMiddleware(cmd.checkClientIPWhenConnected)
 func (cmd *Command) checkClientIPWhenConnected(state openvpn.State) error {
 	if state == openvpn.STATE_CONNECTED {
-		ipForwarded, err := cmd.ipResolver.GetOutboundIP()
+		ipForwarded, err := cmd.ipResolver.GetPublicIP()
 		if err != nil {
 			cmd.resultWriter.NodeError("Forwarded IP not detected", err)
 			cmd.ipCheckWaiter.Done()
@@ -95,7 +95,7 @@ func (cmd *Command) checkClientHandleTimeout() {
 }
 
 func (cmd *Command) checkClientIPWhenDisconnected() {
-	ipForwarded, err := cmd.ipResolver.GetOutboundIP()
+	ipForwarded, err := cmd.ipResolver.GetPublicIP()
 	if err != nil {
 		cmd.resultWriter.NodeError("Disconnect IP not detected", err)
 		return
