@@ -2,11 +2,10 @@ package client_connection
 
 import (
 	"errors"
-	"github.com/mysterium/node/communication"
 	"github.com/mysterium/node/identity"
-	"github.com/mysterium/node/openvpn"
 	"github.com/mysterium/node/openvpn/middlewares/client/bytescount"
 	"github.com/mysterium/node/server"
+	"github.com/mysterium/node/service_discovery/dto"
 	"github.com/mysterium/node/session"
 )
 
@@ -17,11 +16,13 @@ type connectionManager struct {
 	newVpnClient     VpnClientCreator
 	statsKeeper      bytescount.SessionStatsKeeper
 	//these are populated by Connect at runtime
-	dialog         communication.Dialog
-	vpnClient      openvpn.Client
-	status         ConnectionStatus
-	currentSession session.SessionID
+	conn *connection
 }
+
+var (
+	NoConnection  = errors.New("no connection exists")
+	AlreadyExists = errors.New("connection already exists")
+)
 
 func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEstablisherCreator,
 	vpnClientFactory VpnClientCreator, statsKeeper bytescount.SessionStatsKeeper) *connectionManager {
@@ -30,80 +31,65 @@ func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEs
 		newDialogCreator: dialogEstablisherFactory,
 		newVpnClient:     vpnClientFactory,
 		statsKeeper:      statsKeeper,
-		dialog:           nil,
-		vpnClient:        nil,
-		status:           statusNotConnected(),
+		conn:             nil,
 	}
 }
 
 func (manager *connectionManager) Connect(myID, providerID identity.Identity) error {
-	manager.status = statusConnecting()
+	if manager.conn != nil {
+		return AlreadyExists
+	}
 
-	proposals, err := manager.mysteriumClient.FindProposals(providerID.Address)
+	proposal, err := manager.findProposalByNode(providerID)
 	if err != nil {
-		manager.status = statusError(err)
 		return err
 	}
-	if len(proposals) == 0 {
-		err = errors.New("node has no service proposals")
-		manager.status = statusError(err)
-		return err
-	}
-	proposal := proposals[0]
 
 	dialogCreator := manager.newDialogCreator(myID)
-	manager.dialog, err = dialogCreator.CreateDialog(providerID, proposal.ProviderContacts[0])
+	dialog, err := dialogCreator.CreateDialog(providerID, proposal.ProviderContacts[0])
 	if err != nil {
-		manager.status = statusError(err)
 		return err
 	}
 
-	vpnSession, err := session.RequestSessionCreate(manager.dialog, proposal.ID)
+	vpnSession, err := session.RequestSessionCreate(dialog, proposal.ID)
 	if err != nil {
-		manager.status = statusError(err)
-		return err
-	}
-	manager.currentSession = vpnSession.ID
-
-	manager.vpnClient, err = manager.newVpnClient(*vpnSession, myID, manager.onVpnStateChanged)
-
-	if err := manager.vpnClient.Start(); err != nil {
-		manager.status = statusError(err)
 		return err
 	}
 
+	vpnClient, err := manager.newVpnClient(*vpnSession, myID, manager.onVpnStateChanged)
+
+	if err := vpnClient.Start(); err != nil {
+		dialog.Close()
+		return err
+	}
+	manager.conn = newConnection(dialog, vpnClient, vpnSession.ID)
 	return nil
 }
 
 func (manager *connectionManager) Status() ConnectionStatus {
-	return manager.status
+	if manager.conn == nil {
+		return statusNotConnected()
+	}
+	return manager.conn.status
 }
 
 func (manager *connectionManager) Disconnect() error {
-	manager.status = statusDisconnecting()
-
-	if manager.vpnClient != nil {
-		if err := manager.vpnClient.Stop(); err != nil {
-			return err
-		}
+	if manager.conn == nil {
+		return NoConnection
 	}
-	if manager.dialog != nil {
-		if err := manager.dialog.Close(); err != nil {
-			return err
-		}
-	}
-
+	manager.conn.close()
 	return nil
 }
 
-func (manager *connectionManager) onVpnStateChanged(state openvpn.State) {
-	switch state {
-	case openvpn.STATE_CONNECTED:
-		manager.statsKeeper.MarkSessionStart()
-		manager.status = statusConnected(manager.currentSession)
-	case openvpn.STATE_RECONNECTING:
-		manager.status = statusConnecting()
-	case openvpn.STATE_EXITING:
-		manager.status = statusNotConnected()
+// TODO this can be extraced as depencency later when node selection criteria will be clear
+func (manager *connectionManager) findProposalByNode(nodeID identity.Identity) (*dto.ServiceProposal, error) {
+	proposals, err := manager.mysteriumClient.FindProposals(nodeID.Address)
+	if err != nil {
+		return nil, err
 	}
+	if len(proposals) == 0 {
+		err = errors.New("node has no service proposals")
+		return nil, err
+	}
+	return &proposals[0], nil
 }
