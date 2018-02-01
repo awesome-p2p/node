@@ -24,5 +24,4 @@ type Manager interface {
 	Connect(identity identity.Identity, NodeKey string) error
 	Status() ConnectionStatus
 	Disconnect() error
-	Wait() error
 }
