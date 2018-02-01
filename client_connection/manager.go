@@ -5,25 +5,16 @@ import (
 	"github.com/mysterium/node/communication"
 	"github.com/mysterium/node/identity"
 	"github.com/mysterium/node/openvpn"
-	"github.com/mysterium/node/openvpn/middlewares/client/auth"
 	"github.com/mysterium/node/openvpn/middlewares/client/bytescount"
-	"github.com/mysterium/node/openvpn/middlewares/client/state"
-	openvpnSession "github.com/mysterium/node/openvpn/session"
 	"github.com/mysterium/node/server"
 	"github.com/mysterium/node/session"
-	"path/filepath"
-	"time"
 )
-
-type DialogEstablisherFactory func(identity identity.Identity) communication.DialogEstablisher
-
-type VpnClientFactory func(session.SessionDto, identity.Identity, state.ClientStateCallback) (openvpn.Client, error)
 
 type connectionManager struct {
 	//these are passed on creation
 	mysteriumClient  server.Client
-	newDialogCreator DialogEstablisherFactory
-	newVpnClient     VpnClientFactory
+	newDialogCreator DialogEstablisherCreator
+	newVpnClient     VpnClientCreator
 	statsKeeper      bytescount.SessionStatsKeeper
 	//these are populated by Connect at runtime
 	dialog         communication.Dialog
@@ -32,8 +23,8 @@ type connectionManager struct {
 	currentSession session.SessionID
 }
 
-func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEstablisherFactory,
-	vpnClientFactory VpnClientFactory, statsKeeper bytescount.SessionStatsKeeper) *connectionManager {
+func NewManager(mysteriumClient server.Client, dialogEstablisherFactory DialogEstablisherCreator,
+	vpnClientFactory VpnClientCreator, statsKeeper bytescount.SessionStatsKeeper) *connectionManager {
 	return &connectionManager{
 		mysteriumClient:  mysteriumClient,
 		newDialogCreator: dialogEstablisherFactory,
@@ -116,56 +107,5 @@ func (manager *connectionManager) onVpnStateChanged(state openvpn.State) {
 		manager.status = statusConnecting()
 	case openvpn.STATE_EXITING:
 		manager.status = statusNotConnected()
-	}
-}
-
-func statusError(err error) ConnectionStatus {
-	return ConnectionStatus{NotConnected, "", err}
-}
-
-func statusConnecting() ConnectionStatus {
-	return ConnectionStatus{Connecting, "", nil}
-}
-
-func statusConnected(sessionID session.SessionID) ConnectionStatus {
-	return ConnectionStatus{Connected, sessionID, nil}
-}
-
-func statusNotConnected() ConnectionStatus {
-	return ConnectionStatus{NotConnected, "", nil}
-}
-
-func statusDisconnecting() ConnectionStatus {
-	return ConnectionStatus{Disconnecting, "", nil}
-}
-
-func ConfigureVpnClientFactory(mysteriumAPIClient server.Client, vpnClientRuntimeDirectory string,
-	signerFactory identity.SignerFactory, statsKeeper bytescount.SessionStatsKeeper) VpnClientFactory {
-	return func(vpnSession session.SessionDto, id identity.Identity, stateCallback state.ClientStateCallback) (openvpn.Client, error) {
-		vpnConfig, err := openvpn.NewClientConfigFromString(
-			vpnSession.Config,
-			filepath.Join(vpnClientRuntimeDirectory, "client.ovpn"),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		signer := signerFactory(id)
-
-		statsSaver := bytescount.NewSessionStatsSaver(statsKeeper)
-		statsSender := bytescount.NewSessionStatsSender(mysteriumAPIClient, vpnSession.ID, signer)
-		statsHandler := bytescount.NewCompositeStatsHandler(statsSaver, statsSender)
-
-		credentialsProvider := openvpnSession.SignatureCredentialsProvider(vpnSession.ID, signer)
-		vpnMiddlewares := []openvpn.ManagementMiddleware{
-			state.NewMiddleware(stateCallback),
-			bytescount.NewMiddleware(statsHandler, 1*time.Minute),
-			auth.NewMiddleware(credentialsProvider),
-		}
-		return openvpn.NewClient(
-			vpnConfig,
-			vpnClientRuntimeDirectory,
-			vpnMiddlewares...,
-		), nil
 	}
 }
