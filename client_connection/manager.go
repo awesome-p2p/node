@@ -56,13 +56,25 @@ func (manager *connectionManager) Connect(myID, providerID identity.Identity) er
 		return err
 	}
 
-	vpnClient, err := manager.newVpnClient(*vpnSession, myID, manager.onVpnStateChanged)
+	vpnStateChannel := make(vpnStateChannel, 1)
+	vpnClient, err := manager.newVpnClient(*vpnSession, myID, channelToStateCallback(vpnStateChannel))
 
 	if err := vpnClient.Start(); err != nil {
 		dialog.Close()
 		return err
 	}
-	manager.conn = newConnection(dialog, vpnClient, vpnSession.ID)
+	manager.conn = newConnection(dialog, vpnClient, vpnSession.ID, vpnStateChannel)
+	go func() {
+		for {
+			state, more := <-manager.conn.stateChannel
+			if !more {
+				break
+			}
+			manager.onConnectionStatusUpdate(state)
+		}
+		manager.conn = nil
+		close(vpnStateChannel)
+	}()
 	return nil
 }
 
@@ -79,6 +91,13 @@ func (manager *connectionManager) Disconnect() error {
 	}
 	manager.conn.close()
 	return nil
+}
+
+func (manager *connectionManager) onConnectionStatusUpdate(state State) {
+	switch state {
+	case Connected:
+		manager.statsKeeper.MarkSessionStart()
+	}
 }
 
 // TODO this can be extraced as depencency later when node selection criteria will be clear
